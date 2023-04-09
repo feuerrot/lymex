@@ -1,0 +1,7 @@
+server: tcp://mqttserver:1883
+clientid: lymex-testclient
+listen: ":2112"
+qos: 1
+timeout: 30
+topics:
+  - 'sensor/#'
