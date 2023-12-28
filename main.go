@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,18 +49,60 @@ func (m *mqttExporter) subscribe(topics []string, qos int) {
 	}
 }
 
+func (m *mqttExporter) jsonHandler(topic string, raw []byte) {
+	var outerValue map[string]interface{}
+
+	err := json.Unmarshal(raw, &outerValue)
+	if err != nil {
+		log.Printf("can't unmarshal %s: %v", raw, err)
+		return
+	}
+
+	splitted := strings.Split(topic, "/")
+	baseTopic := fmt.Sprintf("sensor/%s", splitted[1])
+
+	for sensor, data := range outerValue {
+		if sensor == "info" || sensor == "status" {
+			log.Printf("don't decode info/status message: %s", raw)
+			return
+		}
+
+		var innerValue map[string]map[string]float64
+		err = json.Unmarshal(raw, &innerValue)
+		if err != nil {
+			log.Printf("can't unmarshal inner %s: %v", data, err)
+			return
+		}
+
+		for kind, value := range innerValue[sensor] {
+			m.insertData(strings.ToLower(fmt.Sprintf("%s/%s/%s", baseTopic, sensor, kind)), value)
+		}
+	}
+}
+
 func (m *mqttExporter) messagePubHandler(client mqtt.Client, msg mqtt.Message) {
 	raw := string(msg.Payload())
 	topic := string(msg.Topic())
 	log.Printf("%s: %s", topic, raw)
+
+	if strings.HasSuffix(topic, "/status") {
+		m.jsonHandler(topic, msg.Payload())
+		return
+	}
+
 	pValue, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		log.Printf("can't convert %s to float64", raw)
 		return
 	}
+
+	m.insertData(topic, pValue)
+}
+
+func (m *mqttExporter) insertData(topic string, value float64) {
 	insert := mqttData{
 		topic:     topic,
-		value:     pValue,
+		value:     value,
 		timestamp: time.Now(),
 	}
 
