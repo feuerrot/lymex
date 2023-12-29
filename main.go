@@ -90,6 +90,10 @@ func (m *mqttExporter) messagePubHandler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
+	if strings.Contains(raw, " ") {
+		raw = strings.Split(raw, " ")[0]
+	}
+
 	pValue, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		log.Printf("can't convert %s to float64", raw)
